@@ -7,7 +7,6 @@
     
     <link href="https://fonts.googleapis.com/css2?family=League+Spartan:wght@400;600;700&family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
-    
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -48,6 +47,9 @@
         ::-webkit-scrollbar-track { background: #f1f1f1; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* Utility class to hide the invisible RFID input field */
+        .rfid-hidden { position: absolute; left: -9999px; opacity: 0; pointer-events: none; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -63,7 +65,7 @@
                 <button id="nav-public-home" onclick="navigateTo('public-hub')" class="text-peak-primary font-semibold hover:text-peak-accent hidden">Resident Portal</button>
                 <button id="nav-staff-dash" onclick="navigateTo('staff-dashboard')" class="text-peak-primary font-semibold hover:text-peak-accent hidden">CRM Dashboard</button>
                 <button id="nav-staff-contacts" onclick="navigateTo('staff-contacts')" class="text-peak-primary font-semibold hover:text-peak-accent hidden">Contacts</button>
-                <button id="nav-admin" onclick="navigateTo('admin-portal')" class="text-peak-primary font-semibold hover:text-peak-accent hidden flex items-center gap-1"><i data-lucide="shield-check" class="w-4 h-4"></i> Admin</button>
+                <button id="nav-admin" onclick="verifyAdminAccess()" class="text-peak-primary font-semibold hover:text-peak-accent hidden flex items-center gap-1"><i data-lucide="shield-check" class="w-4 h-4"></i> Admin</button>
                 <button id="nav-logout" onclick="handleLogout()" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-md font-semibold hover:bg-gray-200 hidden">Sign Out</button>
             </nav>
         </div>
@@ -71,9 +73,30 @@
 
     <main class="flex-grow w-full max-w-7xl mx-auto p-4 sm:p-6 md:p-8 relative">
         
+        <!-- Loading Overlay -->
         <div id="loading-overlay" class="absolute inset-0 bg-peak-bg/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center hidden rounded-lg">
             <i data-lucide="loader-2" class="w-12 h-12 text-peak-primary animate-spin mb-4"></i>
             <p class="text-peak-primary font-semibold font-heading text-xl">Processing...</p>
+        </div>
+
+        <!-- RFID Scanner Modal -->
+        <div id="rfid-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-[90] flex items-center justify-center hidden">
+            <div class="bg-white p-8 rounded-xl shadow-2xl max-w-sm w-full mx-4 text-center transform transition-all scale-95 opacity-0 border-t-8 border-peak-primary" id="rfid-modal-inner">
+                <div class="w-20 h-20 bg-blue-50 text-peak-primary rounded-full flex items-center justify-center mx-auto mb-6">
+                    <i data-lucide="scan-line" class="w-10 h-10 animate-pulse"></i>
+                </div>
+                <h3 id="rfid-title" class="text-2xl font-bold text-gray-800 mb-2">Badge Verification</h3>
+                <p id="rfid-reason" class="text-gray-600 mb-6 text-sm">Please scan your staff ID badge to proceed.</p>
+                
+                <!-- The hidden input intercepts the physical hardware scanner's keystrokes -->
+                <form onsubmit="event.preventDefault(); handleRfidSubmit();">
+                    <input type="password" id="rfid-input" autocomplete="off" class="rfid-hidden">
+                </form>
+                
+                <p class="text-xs text-gray-400 animate-bounce">Waiting for scanner...</p>
+                
+                <button onclick="cancelRfidScan()" class="mt-8 text-sm text-gray-500 hover:text-gray-800 font-semibold underline">Cancel</button>
+            </div>
         </div>
 
         <!-- 1. Landing View -->
@@ -164,14 +187,8 @@
                     <textarea id="case-desc" required rows="5" class="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-peak-primary focus:outline-none"></textarea>
                 </div>
 
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Attachment Link (Optional)</label>
-                    <input type="url" id="case-file" placeholder="https://..." class="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-peak-primary focus:outline-none">
-                    <p class="text-xs text-gray-500 mt-1">Provide a link to Google Drive, Dropbox, or Imgur for images/documents.</p>
-                </div>
-
                 <div class="pt-4">
-                    <button type="submit" class="w-full bg-peak-primary text-white font-bold py-3 rounded-md hover:bg-blue-800 transition-colors shadow-md flex justify-center items-center gap-2"><i data-lucide="send" class="w-5 h-5"></i> Submit Request</button>
+                    <button type="submit" class="w-full bg-peak-primary text-white font-bold py-3 rounded-md hover:bg-blue-800 transition-colors shadow-md">Submit Request</button>
                 </div>
             </form>
         </section>
@@ -190,7 +207,7 @@
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Email Used on Submission <span class="text-red-500">*</span></label>
                     <input type="email" id="track-email" required class="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-peak-primary focus:outline-none">
                 </div>
-                <button type="submit" class="w-full bg-peak-primary text-white font-bold py-3 rounded-md hover:bg-blue-800 transition-colors flex justify-center items-center gap-2"><i data-lucide="search" class="w-5 h-5"></i> Check Status</button>
+                <button type="submit" class="w-full bg-peak-primary text-white font-bold py-3 rounded-md hover:bg-blue-800 transition-colors">Check Status</button>
             </form>
 
             <div id="track-result" class="mt-8 hidden bg-peak-bg p-6 rounded-lg border border-blue-200">
@@ -264,11 +281,11 @@
                     <label class="block text-sm font-semibold text-gray-700 mb-1">Password</label>
                     <input type="password" id="login-password" required class="w-full px-4 py-2 border rounded-md focus:ring-2 focus:ring-peak-primary focus:outline-none">
                 </div>
-                <button type="submit" class="w-full bg-peak-primary text-white font-bold py-2 rounded-md hover:bg-blue-800 transition-colors flex justify-center items-center gap-2"><i data-lucide="log-in" class="w-5 h-5"></i> Sign In</button>
+                <button type="submit" class="w-full bg-peak-primary text-white font-bold py-2 rounded-md hover:bg-blue-800 transition-colors">Sign In</button>
             </form>
             
             <div class="mt-6 border-t pt-4">
-                <button onclick="handleGoogleLogin()" class="w-full bg-white border border-gray-300 text-gray-700 font-semibold py-2 rounded-md hover:bg-gray-50 transition-colors flex justify-center items-center gap-2 shadow-sm">
+                <button id="btn-google-login" class="w-full bg-white border border-gray-300 text-gray-700 font-semibold py-2 rounded-md hover:bg-gray-50 transition-colors flex justify-center items-center gap-2 shadow-sm">
                     <svg class="w-5 h-5" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
                     Continue with Google
                 </button>
@@ -296,8 +313,8 @@
             </div>
             
             <div class="flex flex-col sm:flex-row gap-4 justify-center">
-                <button onclick="handleLogout()" class="px-6 py-3 bg-gray-100 text-gray-700 font-bold rounded-md hover:bg-gray-200 transition-colors w-full sm:w-auto">Decline & Sign Out</button>
-                <button onclick="acknowledgeConfidentiality()" class="px-6 py-3 bg-peak-primary text-white font-bold rounded-md hover:bg-blue-800 transition-colors shadow-md w-full sm:w-auto">I Acknowledge & Agree</button>
+                <button id="btn-decline-confidentiality" class="px-6 py-3 bg-gray-100 text-gray-700 font-bold rounded-md hover:bg-gray-200 transition-colors w-full sm:w-auto">Decline & Sign Out</button>
+                <button id="btn-accept-confidentiality" class="px-6 py-3 bg-peak-primary text-white font-bold rounded-md hover:bg-blue-800 transition-colors shadow-md w-full sm:w-auto">I Acknowledge & Agree</button>
             </div>
         </section>
 
@@ -311,10 +328,7 @@
                 
                 <!-- Filters -->
                 <div class="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
-                    <div class="relative flex-grow">
-                        <i data-lucide="search" class="w-4 h-4 absolute left-3 top-3 text-gray-400"></i>
-                        <input type="text" id="dash-search" placeholder="Search ID, Name, Email..." class="pl-9 pr-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-peak-primary focus:outline-none w-full">
-                    </div>
+                    <input type="text" id="dash-search" placeholder="Search ID, Name, Email..." class="px-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-peak-primary focus:outline-none flex-grow">
                     <select id="dash-status" class="px-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-peak-primary focus:outline-none bg-white">
                         <option value="">All Statuses</option>
                         <option value="Received">Received</option>
@@ -350,10 +364,7 @@
                         <!-- Populated by JS -->
                     </tbody>
                 </table>
-                <div id="dash-empty" class="hidden p-8 text-center text-gray-500 flex flex-col items-center">
-                    <i data-lucide="inbox" class="w-12 h-12 text-gray-300 mb-2"></i>
-                    No cases found matching criteria.
-                </div>
+                <div id="dash-empty" class="hidden p-8 text-center text-gray-500">No cases found matching criteria.</div>
             </div>
         </section>
 
@@ -375,22 +386,21 @@
                         
                         <div class="grid sm:grid-cols-2 gap-4 mb-6">
                             <div>
-                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><i data-lucide="user" class="w-3 h-3"></i> Resident</p>
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider">Resident</p>
                                 <p id="detail-name" class="font-semibold text-lg">...</p>
                                 <p id="detail-email" class="text-sm text-blue-600">...</p>
                                 <p id="detail-phone" class="text-sm">...</p>
                                 <p id="detail-address" class="text-sm mt-1">...</p>
                             </div>
                             <div>
-                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 flex items-center gap-1"><i data-lucide="tag" class="w-3 h-3"></i> Classification</p>
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider">Classification</p>
                                 <p class="text-sm"><span class="font-semibold">Type:</span> <span id="detail-type">...</span></p>
                                 <p class="text-sm"><span class="font-semibold">Dept:</span> <span id="detail-dept-display">...</span></p>
-                                <div class="mt-2" id="detail-file-container"></div>
                             </div>
                         </div>
 
                         <div>
-                            <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1"><i data-lucide="align-left" class="w-3 h-3"></i> Description</p>
+                            <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Description</p>
                             <div id="detail-desc" class="bg-gray-50 p-4 rounded-md text-sm text-gray-700 whitespace-pre-wrap">...</div>
                         </div>
                     </div>
@@ -400,7 +410,7 @@
                 <div class="space-y-6">
                     <!-- Management Box -->
                     <div class="bg-white p-6 rounded-xl shadow border border-gray-100 border-t-4 border-t-peak-accent">
-                        <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i data-lucide="settings-2" class="w-5 h-5"></i> Management</h3>
+                        <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><i data-lucide="settings-2" class="w-5 h-5"></i> Case Management</h3>
                         
                         <div class="space-y-4">
                             <div>
@@ -424,7 +434,7 @@
                                     <option value="Other">Other</option>
                                 </select>
                             </div>
-                            <button onclick="saveCaseUpdates()" class="w-full bg-peak-primary text-white py-2 rounded-md font-semibold text-sm hover:bg-blue-800 transition flex justify-center items-center gap-2"><i data-lucide="save" class="w-4 h-4"></i> Save Changes</button>
+                            <button id="btn-save-case" class="w-full bg-peak-primary text-white py-2 rounded-md font-semibold text-sm hover:bg-blue-800 transition">Save Changes</button>
                         </div>
                     </div>
 
@@ -438,7 +448,7 @@
 
                         <div class="border-t pt-4">
                             <textarea id="new-note" rows="2" placeholder="Add a private staff note..." class="w-full px-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-peak-primary mb-2"></textarea>
-                            <button onclick="addNote()" class="bg-gray-100 text-peak-primary border border-gray-300 w-full py-1.5 rounded-md font-semibold text-sm hover:bg-gray-200 transition">Add Note</button>
+                            <button id="btn-add-note" class="bg-gray-100 text-peak-primary border border-gray-300 w-full py-1.5 rounded-md font-semibold text-sm hover:bg-gray-200 transition">Add Note</button>
                         </div>
                     </div>
                 </div>
@@ -480,18 +490,18 @@
                             <h4 class="font-semibold text-sm mb-1">Export CRM Data</h4>
                             <p class="text-xs text-gray-500">Download a full CSV of all public cases currently stored.</p>
                         </div>
-                        <button onclick="exportCasesCSV()" class="bg-peak-primary text-white px-4 py-2 rounded-md font-semibold text-sm hover:bg-blue-800 flex items-center gap-2 whitespace-nowrap"><i data-lucide="download" class="w-4 h-4"></i> Export Cases</button>
+                        <button id="btn-export-csv" class="bg-peak-primary text-white px-4 py-2 rounded-md font-semibold text-sm hover:bg-blue-800 flex items-center gap-2 whitespace-nowrap"><i data-lucide="download" class="w-4 h-4"></i> Export Cases</button>
                     </div>
 
-                    <h3 class="text-xl font-bold mb-4">System Audit Logs</h3>
-                    <div id="admin-logs-wrapper" class="bg-gray-900 border border-gray-800 rounded-lg h-64 flex flex-col items-center justify-center relative overflow-hidden">
-                        <div id="admin-logs-lock" class="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/90 z-10 backdrop-blur-sm transition-all">
-                            <i data-lucide="lock" class="w-8 h-8 text-gray-500 mb-3"></i>
-                            <button onclick="unlockAuditLogs()" class="bg-gray-800 text-gray-300 border border-gray-700 px-4 py-2 rounded font-semibold hover:bg-gray-700 hover:text-white transition-colors">Authenticate to View Logs</button>
-                        </div>
-                        <div id="admin-logs-container" class="w-full h-full p-4 font-mono text-xs text-green-400 overflow-y-auto space-y-2 hidden">
-                            <!-- Populated by JS -->
-                        </div>
+                    <h3 class="text-xl font-bold mb-4 flex items-center justify-between">
+                        System Audit Logs
+                        <button id="btn-view-logs" class="text-xs font-semibold bg-gray-200 text-gray-700 px-3 py-1 rounded hover:bg-gray-300">View Logs</button>
+                    </h3>
+                    <div id="admin-logs-container" class="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-xs h-64 overflow-y-auto space-y-2 hidden">
+                        <!-- Populated by JS -->
+                    </div>
+                    <div id="admin-logs-placeholder" class="bg-gray-100 text-gray-500 p-4 rounded-lg font-mono text-xs h-64 flex items-center justify-center border border-dashed border-gray-300">
+                        Authentication required to view system logs.
                     </div>
                 </div>
             </div>
@@ -504,7 +514,7 @@
                 <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                     <div class="relative flex-grow">
                         <i data-lucide="search" class="w-4 h-4 absolute left-3 top-3 text-gray-400"></i>
-                        <input type="text" id="contacts-search" placeholder="Search contacts..." class="w-full pl-9 pr-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-peak-primary focus:outline-none">
+                        <input type="text" id="contacts-search" placeholder="Search contacts..." class="w-full pl-9 pr-3 py-2 border rounded-md text-sm focus:ring-1 focus:ring-peak-primary">
                     </div>
                     <button onclick="document.getElementById('new-contact-form').classList.toggle('hidden')" class="bg-peak-accent text-white px-4 py-2 rounded-md font-semibold text-sm hover:bg-orange-600 flex items-center justify-center gap-2 whitespace-nowrap"><i data-lucide="user-plus" class="w-4 h-4"></i> Add Contact</button>
                 </div>
@@ -588,7 +598,7 @@
                 </div>
 
                 <div class="pt-4">
-                    <button type="submit" class="w-full bg-peak-primary text-white font-bold py-3 rounded-md hover:bg-blue-800 transition-colors shadow-md flex justify-center items-center gap-2"><i data-lucide="plus-circle" class="w-5 h-5"></i> Create Case for Resident</button>
+                    <button type="submit" class="w-full bg-peak-primary text-white font-bold py-3 rounded-md hover:bg-blue-800 transition-colors shadow-md">Create Case for Resident</button>
                 </div>
             </form>
         </section>
@@ -610,26 +620,6 @@
         </div>
     </div>
 
-    <!-- RFID Scanner Modal (2FA) -->
-    <div id="rfid-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-[80] flex items-center justify-center hidden" onclick="document.getElementById('rfid-input').focus()">
-        <div class="bg-white p-8 rounded-xl shadow-2xl max-w-sm w-full mx-4 text-center transform transition-all scale-95 opacity-0 border-t-8 border-peak-primary" id="rfid-modal-inner" onclick="event.stopPropagation()">
-            <div class="w-20 h-20 bg-blue-50 text-peak-primary rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-                <i data-lucide="scan-line" class="w-10 h-10"></i>
-            </div>
-            <h3 class="text-2xl font-bold text-gray-800 mb-2" id="rfid-title">Scan Badge</h3>
-            <p class="text-gray-600 mb-6 text-sm" id="rfid-msg">Please scan your RFID badge to continue.</p>
-            
-            <form id="rfid-form" autocomplete="off" onsubmit="event.preventDefault();">
-                <!-- Invisible input focused automatically to catch RFID scanner input -->
-                <input type="password" id="rfid-input" class="opacity-0 absolute -z-10" autocomplete="off">
-            </form>
-            
-            <div id="rfid-error" class="hidden text-red-500 text-sm font-semibold mb-4 animate-bounce">Invalid Badge ID. Access Denied.</div>
-            
-            <button type="button" onclick="cancelRfid()" class="mt-2 text-sm text-gray-400 hover:text-gray-600 underline">Cancel / Exit</button>
-        </div>
-    </div>
-
     <!-- Case Success Modal -->
     <div id="success-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[70] flex items-center justify-center hidden">
         <div class="bg-white p-8 rounded-xl shadow-2xl max-w-lg w-full mx-4 text-center transform transition-all scale-95 opacity-0 border-t-8 border-peak-primary" id="success-modal-inner">
@@ -648,13 +638,12 @@
         </div>
     </div>
 
-    <!-- Firebase & Application Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, signInAnonymously, signOut, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, onSnapshot, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, getDocs, getDoc, doc, setDoc, updateDoc, deleteDoc, serverTimestamp, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Firebase Configuration
+        // Firebase Configuration (from prompt)
         const firebaseConfig = {
             apiKey: "AIzaSyCv667M4oQOX8Piex6NtGnUlowcKQNTSDs",
             authDomain: "peakcrm-5a774.firebaseapp.com",
@@ -670,7 +659,7 @@
         const db = getFirestore(app);
         const provider = new GoogleAuthProvider();
         
-        // Canvas strict path base
+        // Canvas Proxy Compatibility
         const rootAppId = typeof __app_id !== 'undefined' ? __app_id : 'peakcrm-production-v1';
         const publicBase = ['artifacts', rootAppId, 'public', 'data'];
 
@@ -681,31 +670,20 @@
         let hasAcknowledged = false;
         let hasVerifiedBadgeSession = false;
         let userBadgeId = null;
-        window.pendingStaffRoute = null;
-
-        let allCases = []; 
+        
+        let allCases = []; // Memory cache
         let allOptOuts = [];
         let allContacts = [];
         let currentViewingCaseId = null;
         let casesUnsubscribe = null;
         let contactsUnsubscribe = null;
 
-        // --- SAFE LISTENER HELPER FOR CANVAS ---
-        // Avoids TypeError: null is not an object race conditions
-        const addSafeListener = (id, event, handler) => {
-            const attach = () => {
-                const el = document.getElementById(id);
-                if (el) el.addEventListener(event, handler);
-                else setTimeout(attach, 50); 
-            };
-            attach();
-        };
+        // RFID Promise Hooks
+        let rfidResolve = null;
+        let rfidReject = null;
 
         // --- UI UTILITIES ---
-
-        const showLoading = (show) => {
-            document.getElementById('loading-overlay').style.display = show ? 'flex' : 'none';
-        };
+        const showLoading = (show) => { document.getElementById('loading-overlay').style.display = show ? 'flex' : 'none'; };
 
         window.showToast = (msg, type = 'info') => {
             const container = document.getElementById('toast-container');
@@ -727,10 +705,7 @@
             container.appendChild(toast);
             lucide.createIcons();
             
-            requestAnimationFrame(() => {
-                toast.classList.remove('translate-y-10', 'opacity-0');
-            });
-
+            requestAnimationFrame(() => toast.classList.remove('translate-y-10', 'opacity-0'));
             setTimeout(() => {
                 toast.classList.add('translate-y-10', 'opacity-0');
                 setTimeout(() => toast.remove(), 300);
@@ -746,9 +721,7 @@
             okBtn.innerText = okText;
             
             modal.classList.remove('hidden');
-            requestAnimationFrame(() => {
-                inner.classList.remove('scale-95', 'opacity-0');
-            });
+            requestAnimationFrame(() => inner.classList.remove('scale-95', 'opacity-0'));
 
             const cleanup = () => {
                 inner.classList.add('scale-95', 'opacity-0');
@@ -757,103 +730,87 @@
                 document.getElementById('confirm-cancel').removeEventListener('click', cleanup);
             };
 
-            const handleOk = async () => {
-                cleanup();
-                await onConfirm();
-            };
-
+            const handleOk = async () => { cleanup(); await onConfirm(); };
             okBtn.addEventListener('click', handleOk);
             document.getElementById('confirm-cancel').addEventListener('click', cleanup);
         };
 
-        // --- RFID 2FA LOGIC ---
-        let rfidResolve = null;
-        let rfidReject = null;
-        let rfidMode = null; 
-
-        window.openRfidModal = (mode, actionContext) => {
-            return new Promise((resolve, reject) => {
-                rfidResolve = resolve;
-                rfidReject = reject;
-                rfidMode = mode;
-
-                document.getElementById('rfid-title').innerText = mode === 'register' ? 'Badge Setup Required' : 'Hardware Auth Required';
-                document.getElementById('rfid-msg').innerHTML = mode === 'register' 
-                    ? 'Scan your RFID badge to permanently register it to your staff account.' 
-                    : `Scan your RFID badge to authorize:<br><strong class="text-peak-primary">${actionContext}</strong>`;
-                
-                document.getElementById('rfid-error').classList.add('hidden');
-                const input = document.getElementById('rfid-input');
-                input.value = '';
-                
-                const modal = document.getElementById('rfid-modal');
-                const inner = document.getElementById('rfid-modal-inner');
-                modal.classList.remove('hidden');
-                requestAnimationFrame(() => {
-                    inner.classList.remove('scale-95', 'opacity-0');
-                    input.focus();
-                });
-                lucide.createIcons();
-            });
+        // --- SAFE LISTENER HELPER FOR CANVAS RACE CONDITIONS ---
+        const addSafeListener = (id, event, handler) => {
+            const attach = () => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener(event, handler);
+                else setTimeout(attach, 100); // Retry if not yet rendered
+            };
+            attach();
         };
 
-        window.cancelRfid = () => {
-            // FIX: Capture the reject callback before closing the modal clears it!
-            const rejectCallback = rfidReject;
-            closeRfidModal();
-            if (rejectCallback) rejectCallback('Cancelled by user');
+        // --- RFID HARDWARE EMULATION LOGIC ---
+        const openRfidModal = (mode, reasonText) => {
+            return new Promise((resolve, reject) => {
+                const modal = document.getElementById('rfid-modal');
+                const inner = document.getElementById('rfid-modal-inner');
+                const input = document.getElementById('rfid-input');
+                
+                document.getElementById('rfid-title').innerText = mode === 'register' ? 'Register New Badge' : 'Badge Verification';
+                document.getElementById('rfid-reason').innerText = reasonText;
+                
+                rfidResolve = resolve;
+                rfidReject = reject;
+                
+                modal.classList.remove('hidden');
+                requestAnimationFrame(() => inner.classList.remove('scale-95', 'opacity-0'));
+                
+                input.value = '';
+                input.focus();
+                
+                // Force focus keep for the hardware scanner
+                const focusInterval = setInterval(() => {
+                    if (!modal.classList.contains('hidden')) input.focus();
+                    else clearInterval(focusInterval);
+                }, 500);
+            });
         };
 
         const closeRfidModal = () => {
             const modal = document.getElementById('rfid-modal');
             const inner = document.getElementById('rfid-modal-inner');
             inner.classList.add('scale-95', 'opacity-0');
-            setTimeout(() => modal.classList.add('hidden'), 200);
-            rfidResolve = null;
-            rfidReject = null;
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                rfidResolve = null;
+                rfidReject = null;
+            }, 200);
         };
 
-        addSafeListener('rfid-input', 'blur', (e) => {
-            if (!document.getElementById('rfid-modal').classList.contains('hidden')) {
-                setTimeout(() => e.target.focus(), 10); 
-            }
-        });
-
-        addSafeListener('rfid-form', 'submit', async (e) => {
-            e.preventDefault();
+        window.handleRfidSubmit = () => {
             const input = document.getElementById('rfid-input');
             const scannedId = input.value.trim();
-            input.value = ''; 
+            input.value = '';
             
             if (!scannedId) return;
-
-            // FIX: Capture the resolver function BEFORE closeRfidModal nullifies it!
-            const resolveCallback = rfidResolve;
-
-            if (rfidMode === 'register') {
-                closeRfidModal();
-                if (resolveCallback) resolveCallback(scannedId);
-            } else if (rfidMode === 'verify') {
-                if (scannedId === userBadgeId) {
-                    closeRfidModal();
-                    if (resolveCallback) resolveCallback(true);
-                } else {
-                    const errBox = document.getElementById('rfid-error');
-                    errBox.classList.remove('hidden');
-                    setTimeout(() => errBox.classList.add('hidden'), 3000);
-                    input.focus();
-                }
-            }
-        });
-
-        window.verifyBadgeAction = async (actionContext) => {
-            if (!userBadgeId) {
-                showToast('No badge registered to your account.', 'error');
-                throw new Error('No badge registered');
-            }
-            await openRfidModal('verify', actionContext);
+            
+            const resolveFn = rfidResolve; // Capture memory before UI clears it
+            closeRfidModal();
+            if (resolveFn) resolveFn(scannedId);
         };
 
+        window.cancelRfidScan = () => {
+            if (rfidReject) rfidReject('Cancelled by user');
+            closeRfidModal();
+        };
+
+        const verifyBadgeAction = async (actionReason) => {
+            if (!userBadgeId) throw new Error("No badge registered");
+            const scanned = await openRfidModal('verify', actionReason);
+            if (scanned !== userBadgeId) {
+                showToast('Badge mismatch. Access denied.', 'error');
+                throw new Error("Invalid badge");
+            }
+            return true;
+        };
+
+        // --- SECURE SESSION & NAVIGATION ---
         const startSecureStaffSession = async (intendedRoute) => {
             showLoading(true);
             try {
@@ -874,6 +831,12 @@
                 }
                 
                 hasVerifiedBadgeSession = true;
+                
+                // ZERO DATA POLICY: Only fetch PII AFTER successful badge scan
+                if (!casesUnsubscribe) {
+                    setupStaffListeners();
+                }
+
                 navigateTo(intendedRoute); 
                 
             } catch (e) {
@@ -885,7 +848,123 @@
             }
         };
 
-        // --- NAVIGATION & EVENT LOGGING ---
+        window.navigateTo = async (viewId) => {
+            const staffRoutes = ['staff-dashboard', 'staff-contacts', 'admin-portal', 'staff-new-case', 'staff-case'];
+            
+            if (staffRoutes.includes(viewId) && isStaffUser) {
+                if (!hasVerifiedBadgeSession) {
+                    startSecureStaffSession(viewId);
+                    return;
+                }
+                if (!hasAcknowledged) {
+                    window.pendingStaffRoute = viewId;
+                    viewId = 'confidentiality';
+                } else {
+                    // Continuous 2FA for highly sensitive directory
+                    if (viewId === 'staff-contacts') {
+                        try {
+                            await verifyBadgeAction('Access Resident Contacts Directory');
+                        } catch (e) { return; }
+                    }
+                }
+            }
+
+            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+            document.getElementById(`view-${viewId}`).classList.add('active');
+            window.scrollTo(0, 0);
+
+            if (viewId === 'staff-dashboard' && isStaffUser) renderDashboard();
+            if (viewId === 'admin-portal' && isSuperAdmin) loadOptOutsAdmin();
+            if (viewId === 'public-track') document.getElementById('track-result').classList.add('hidden');
+            if (viewId === 'public-ccpa') document.getElementById('ccpa-result').classList.add('hidden');
+        };
+
+        const updateNavMenu = () => {
+            const attachNavs = () => {
+                const nav = document.getElementById('nav-menu');
+                const pHome = document.getElementById('nav-public-home');
+                const sDash = document.getElementById('nav-staff-dash');
+                const sContacts = document.getElementById('nav-staff-contacts');
+                const admin = document.getElementById('nav-admin');
+                const logout = document.getElementById('nav-logout');
+
+                if (!nav) { setTimeout(attachNavs, 100); return; }
+
+                nav.classList.remove('hidden');
+                if (isStaffUser) {
+                    pHome.classList.add('hidden'); // Staff don't see public portal
+                    sDash.classList.remove('hidden');
+                    sContacts.classList.remove('hidden');
+                    logout.classList.remove('hidden');
+                    if (isSuperAdmin) admin.classList.remove('hidden'); else admin.classList.add('hidden');
+                } else {
+                    pHome.classList.remove('hidden');
+                    sDash.classList.add('hidden');
+                    sContacts.classList.add('hidden');
+                    admin.classList.add('hidden');
+                    logout.classList.add('hidden');
+                }
+            };
+            attachNavs();
+        };
+
+        // --- AUTHENTICATION ---
+        const initAuth = async () => {
+            if (auth.currentUser) return; // Already authenticated
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (e) {
+                console.warn('Canvas token rejected. Falling back to anonymous login.', e);
+                await signInAnonymously(auth).catch(err => console.error('Anonymous fallback failed:', err));
+            }
+        };
+
+        onAuthStateChanged(auth, (user) => {
+            currentUser = user;
+            if (user && user.email) {
+                isStaffUser = user.email.endsWith('@rpeak.org');
+                isSuperAdmin = user.email === 'rylee.peak@rpeak.org';
+                // Note: Data is explicitly NOT loaded here due to Zero-Data Policy
+            } else {
+                isStaffUser = false;
+                isSuperAdmin = false;
+                hasAcknowledged = false;
+                hasVerifiedBadgeSession = false;
+                userBadgeId = null;
+                if (casesUnsubscribe) { casesUnsubscribe(); casesUnsubscribe = null; }
+                if (contactsUnsubscribe) { contactsUnsubscribe(); contactsUnsubscribe = null; }
+                allCases = [];
+                allContacts = [];
+            }
+            updateNavMenu();
+        });
+
+        const setupStaffListeners = () => {
+            const casesRef = collection(db, ...publicBase, 'cases');
+            casesUnsubscribe = onSnapshot(casesRef, (snapshot) => {
+                allCases = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                allCases.sort((a, b) => {
+                    const tA = a.createdAt?.toMillis() || 0;
+                    const tB = b.createdAt?.toMillis() || 0;
+                    return tB - tA;
+                });
+                if (document.getElementById('view-staff-dashboard').classList.contains('active')) renderDashboard();
+            }, (error) => {
+                console.error("Staff cases listener error", error);
+            });
+
+            const contactsRef = collection(db, ...publicBase, 'contacts');
+            contactsUnsubscribe = onSnapshot(contactsRef, (snapshot) => {
+                allContacts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if (document.getElementById('view-staff-contacts').classList.contains('active')) renderContacts();
+            });
+        };
+
+        // --- HELPERS ---
         window.openSuccessModal = (caseId) => {
             document.getElementById('success-case-id').innerText = caseId;
             const modal = document.getElementById('success-modal');
@@ -913,9 +992,7 @@
                     user: currentUser?.email || 'System',
                     timestamp: serverTimestamp()
                 });
-            } catch (e) {
-                console.error('Audit logging failed', e);
-            }
+            } catch (e) { console.error('Audit logging failed', e); }
         };
 
         const checkOptOut = async (email) => {
@@ -932,147 +1009,10 @@
                 if (!exists) {
                     await addDoc(contactsRef, { name, email, phone: phone || '', createdAt: serverTimestamp() });
                 }
-            } catch (e) {
-                console.error('Auto-adding contact failed', e);
-            }
+            } catch (e) { console.error('Auto-adding contact failed', e); }
         };
 
-        window.navigateTo = (viewId) => {
-            const staffRoutes = ['staff-dashboard', 'staff-contacts', 'admin-portal', 'staff-new-case', 'staff-case'];
-            
-            if (staffRoutes.includes(viewId) && isStaffUser) {
-                if (!hasVerifiedBadgeSession) {
-                    startSecureStaffSession(viewId);
-                    return;
-                }
-                if (!hasAcknowledged) {
-                    window.pendingStaffRoute = viewId;
-                    viewId = 'confidentiality';
-                }
-            }
-
-            document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
-            document.getElementById(`view-${viewId}`).classList.add('active');
-            window.scrollTo(0, 0);
-
-            if (viewId === 'staff-dashboard' && isStaffUser) renderDashboard();
-            if (viewId === 'admin-portal' && isSuperAdmin) {
-                loadOptOutsAdmin();
-                document.getElementById('admin-logs-lock').classList.remove('hidden');
-                document.getElementById('admin-logs-container').classList.add('hidden');
-            }
-            if (viewId === 'public-track') document.getElementById('track-result').classList.add('hidden');
-            if (viewId === 'public-ccpa') document.getElementById('ccpa-result').classList.add('hidden');
-        };
-
-        window.acknowledgeConfidentiality = () => {
-            hasAcknowledged = true;
-            navigateTo(window.pendingStaffRoute || 'staff-dashboard');
-        };
-
-        const updateNavMenu = () => {
-            const nav = document.getElementById('nav-menu');
-            if (!nav) {
-                setTimeout(updateNavMenu, 50); // Retry if DOM hasn't rendered yet
-                return;
-            }
-            
-            const pHome = document.getElementById('nav-public-home');
-            const sDash = document.getElementById('nav-staff-dash');
-            const sContacts = document.getElementById('nav-staff-contacts');
-            const admin = document.getElementById('nav-admin');
-            const logout = document.getElementById('nav-logout');
-
-            nav.classList.remove('hidden');
-
-            if (isStaffUser) {
-                pHome.classList.add('hidden'); 
-                sDash.classList.remove('hidden');
-                sContacts.classList.remove('hidden');
-                logout.classList.remove('hidden');
-                if (isSuperAdmin) admin.classList.remove('hidden'); else admin.classList.add('hidden');
-            } else {
-                pHome.classList.remove('hidden');
-                sDash.classList.add('hidden');
-                sContacts.classList.add('hidden');
-                admin.classList.add('hidden');
-                logout.classList.add('hidden');
-            }
-        };
-
-        // --- AUTHENTICATION ---
-        const initAuth = async () => {
-            if (auth.currentUser) return; 
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (e) {
-                console.warn('Canvas token rejected (expected when using custom Firebase config). Falling back to anonymous login.', e);
-                await signInAnonymously(auth).catch(err => console.error('Anonymous fallback failed:', err));
-            }
-        };
-
-        onAuthStateChanged(auth, (user) => {
-            currentUser = user;
-            if (user && user.email) {
-                isStaffUser = user.email.endsWith('@rpeak.org');
-                isSuperAdmin = user.email === 'rylee.peak@rpeak.org';
-                
-                if (isStaffUser && !casesUnsubscribe) {
-                    setupStaffListeners();
-                }
-            } else {
-                isStaffUser = false;
-                isSuperAdmin = false;
-                hasAcknowledged = false;
-                hasVerifiedBadgeSession = false;
-                userBadgeId = null;
-                if (casesUnsubscribe) {
-                    casesUnsubscribe();
-                    casesUnsubscribe = null;
-                }
-                if (contactsUnsubscribe) {
-                    contactsUnsubscribe();
-                    contactsUnsubscribe = null;
-                }
-                allCases = [];
-                allContacts = [];
-            }
-            updateNavMenu();
-        });
-
-        const setupStaffListeners = () => {
-            const casesRef = collection(db, ...publicBase, 'cases');
-            casesUnsubscribe = onSnapshot(casesRef, (snapshot) => {
-                allCases = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                allCases.sort((a, b) => {
-                    const tA = a.createdAt?.toMillis() || 0;
-                    const tB = b.createdAt?.toMillis() || 0;
-                    return tB - tA;
-                });
-                
-                if (document.getElementById('view-staff-dashboard').classList.contains('active')) {
-                    renderDashboard();
-                }
-            }, (error) => {
-                console.error("Staff cases listener error", error);
-                if (error.code === 'permission-denied') showToast('Permission denied loading cases. Update Rules.', 'error');
-            });
-
-            const contactsRef = collection(db, ...publicBase, 'contacts');
-            contactsUnsubscribe = onSnapshot(contactsRef, (snapshot) => {
-                allContacts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                if (document.getElementById('view-staff-contacts').classList.contains('active')) {
-                    renderContacts();
-                }
-            }, (error) => {
-                console.error("Contacts listener error", error);
-            });
-        };
-
+        // --- ROLE SPECIFIC LOGIC ---
         window.handleLogout = async () => {
             await signOut(auth);
             await signInAnonymously(auth).catch(e => console.warn(e)); 
@@ -1083,248 +1023,317 @@
             navigateTo('landing');
         };
 
-        addSafeListener('form-staff-login', 'submit', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('login-email').value.trim().toLowerCase();
-            const pass = document.getElementById('login-password').value;
-            
-            if (!email.endsWith('@rpeak.org')) {
-                showToast('Access restricted to @rpeak.org domains', 'error');
-                return;
-            }
-
-            showLoading(true);
+        window.verifyAdminAccess = async () => {
             try {
-                await signInWithEmailAndPassword(auth, email, pass);
-                showToast('Welcome back, Staff Member', 'success');
-                navigateTo('staff-dashboard');
-            } catch (error) {
-                showToast('Authentication failed. Check credentials.', 'error');
-            } finally {
-                showLoading(false);
-            }
-        });
-
-        window.handleGoogleLogin = async () => {
-            try {
-                const result = await signInWithPopup(auth, provider);
-                if (!result.user.email.endsWith('@rpeak.org')) {
-                    await signOut(auth);
-                    await signInAnonymously(auth);
-                    showToast('Unauthorized domain. Only @rpeak.org allowed.', 'error');
-                } else {
-                    showToast('Logged in via Google', 'success');
-                    navigateTo('staff-dashboard');
-                }
-            } catch (error) {
-                showToast('Google Sign-In failed or cancelled.', 'error');
-            }
+                await verifyBadgeAction('Access Admin Portal');
+                navigateTo('admin-portal');
+            } catch (e) { /* Caught internally */ }
         };
 
-        // --- PUBLIC FEATURES ---
-        
-        addSafeListener('form-submit-case', 'submit', async (e) => {
-            e.preventDefault();
-            if (!auth.currentUser) await initAuth(); 
+        // --- EVENT LISTENERS (Safe Mount) ---
+        document.addEventListener('DOMContentLoaded', async () => {
+            lucide.createIcons();
+            await initAuth();
 
-            const email = document.getElementById('case-email').value.trim().toLowerCase();
-            
-            showLoading(true);
-            try {
-                const isOptedOut = await checkOptOut(email);
-                
-                if (isOptedOut) {
-                    showLoading(false);
-                    showToast('This email has been opted out of data collection. Cannot submit case.', 'error');
+            // Staff Authentication Forms
+            addSafeListener('form-staff-login', 'submit', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('login-email').value.trim().toLowerCase();
+                const pass = document.getElementById('login-password').value;
+                if (!email.endsWith('@rpeak.org')) {
+                    showToast('Access restricted to @rpeak.org domains', 'error');
                     return;
                 }
-
-                const year = new Date().getFullYear();
-                const randomId = Math.floor(100000 + Math.random() * 900000);
-                const displayId = `PK-${year}-${randomId}`;
-
-                const caseData = {
-                    displayId,
-                    name: document.getElementById('case-name').value.trim(),
-                    email,
-                    phone: document.getElementById('case-phone').value.trim(),
-                    address: document.getElementById('case-address').value.trim(),
-                    type: document.getElementById('case-type').value,
-                    description: document.getElementById('case-desc').value.trim(),
-                    fileUrl: document.getElementById('case-file').value.trim(),
-                    status: 'Received',
-                    department: 'Unassigned',
-                    createdAt: serverTimestamp()
-                };
-
-                const casesRef = collection(db, ...publicBase, 'cases');
-                await addDoc(casesRef, caseData);
-                
-                await autoAddContact(caseData.name, email, caseData.phone);
-                
-                showLoading(false);
-                document.getElementById('form-submit-case').reset();
-                openSuccessModal(displayId);
-                
-            } catch (error) {
-                showLoading(false);
-                console.error(error);
-                showToast('Error submitting case. Please try again.', 'error');
-            }
-        });
-
-        addSafeListener('form-track-case', 'submit', async (e) => {
-            e.preventDefault();
-            if (!auth.currentUser) await initAuth();
-            
-            const caseId = document.getElementById('track-id').value.trim().toUpperCase();
-            const email = document.getElementById('track-email').value.trim().toLowerCase();
-            const resBox = document.getElementById('track-result');
-            
-            showLoading(true);
-            try {
-                const casesRef = collection(db, ...publicBase, 'cases');
-                const snap = await getDocs(casesRef);
-                const found = snap.docs.find(d => {
-                    const data = d.data();
-                    return data.displayId === caseId && data.email === email;
-                });
-
-                resBox.classList.remove('hidden');
-                
-                if (found) {
-                    const data = found.data();
-                    const dateStr = data.createdAt ? data.createdAt.toDate().toLocaleDateString() : 'Unknown';
-                    const lastUpdatedStr = data.lastUpdatedAt ? data.lastUpdatedAt.toDate().toLocaleString() : dateStr;
-                    
-                    let statusColor = 'text-blue-600 bg-blue-50 border-blue-200';
-                    if (data.status === 'Resolved' || data.status === 'Closed') statusColor = 'text-green-600 bg-green-50 border-green-200';
-                    if (data.status === 'In Progress') statusColor = 'text-orange-600 bg-orange-50 border-orange-200';
-                    
-                    resBox.innerHTML = `
-                        <div class="flex justify-between items-start mb-4 border-b pb-4">
-                            <div>
-                                <h4 class="font-bold text-xl text-gray-800">${data.displayId}</h4>
-                                <p class="text-sm text-gray-500">Submitted on ${dateStr}</p>
-                            </div>
-                            <span class="px-3 py-1 border rounded-full font-bold ${statusColor} text-sm">${data.status}</span>
-                        </div>
-                        <div class="space-y-3">
-                            <p class="text-sm"><span class="font-semibold text-gray-700">Resident Name:</span> ${data.name}</p>
-                            <p class="text-sm"><span class="font-semibold text-gray-700">Issue Category:</span> ${data.type}</p>
-                            <p class="text-sm"><span class="font-semibold text-gray-700">Assigned Department:</span> ${data.department}</p>
-                            ${data.address ? `<p class="text-sm"><span class="font-semibold text-gray-700">Location:</span> ${data.address}</p>` : ''}
-                            <div class="mt-4 bg-white p-4 rounded border text-sm text-gray-700">
-                                <span class="font-semibold block mb-1">Case Description:</span>
-                                ${data.description}
-                            </div>
-                            <div class="mt-4 pt-4 border-t text-xs text-gray-500 flex items-center gap-1">
-                                <i data-lucide="clock" class="w-3 h-3"></i> Last updated: ${lastUpdatedStr}
-                            </div>
-                        </div>
-                    `;
-                    lucide.createIcons();
-                } else {
-                    resBox.innerHTML = `<p class="text-red-600 font-semibold"><i data-lucide="alert-circle" class="w-4 h-4 inline mr-1"></i> No case found matching that ID and Email combination.</p>`;
-                    lucide.createIcons();
+                showLoading(true);
+                try {
+                    await signInWithEmailAndPassword(auth, email, pass);
+                    showToast('Credentials Verified', 'success');
+                    navigateTo('staff-dashboard'); // Will be intercepted by Confidentality & Badge checks
+                } catch (error) {
+                    showToast('Authentication failed.', 'error');
+                } finally {
+                    showLoading(false);
                 }
-            } catch (error) {
-                console.error(error);
-                showToast('Error retrieving status.', 'error');
-            } finally {
-                showLoading(false);
-            }
-        });
+            });
 
-        window.handleCCPA = async (action) => {
-            const emailInput = document.getElementById('ccpa-email').value.trim().toLowerCase();
-            if (!emailInput) {
-                showToast('Please enter your email address to proceed.', 'error');
-                document.getElementById('ccpa-email').focus();
-                return;
-            }
+            addSafeListener('btn-google-login', 'click', async () => {
+                try {
+                    const result = await signInWithPopup(auth, provider);
+                    if (!result.user.email.endsWith('@rpeak.org')) {
+                        await signOut(auth);
+                        await signInAnonymously(auth);
+                        showToast('Unauthorized domain. Only @rpeak.org allowed.', 'error');
+                    } else {
+                        showToast('Google credentials verified', 'success');
+                        navigateTo('staff-dashboard');
+                    }
+                } catch (error) {
+                    showToast('Google Sign-In failed.', 'error');
+                }
+            });
 
-            if (!auth.currentUser) await initAuth();
-            const resBox = document.getElementById('ccpa-result');
-            showLoading(true);
+            // Confidentiality Notice Handlers
+            addSafeListener('btn-accept-confidentiality', 'click', () => {
+                hasAcknowledged = true;
+                const route = window.pendingStaffRoute || 'staff-dashboard';
+                window.pendingStaffRoute = null;
+                navigateTo(route); // Will trigger the RFID badge check!
+            });
+            addSafeListener('btn-decline-confidentiality', 'click', handleLogout);
 
-            try {
-                const casesRef = collection(db, ...publicBase, 'cases');
-                const snap = await getDocs(casesRef);
-                const userCases = snap.docs.filter(d => d.data().email === emailInput);
-
-                if (action === 'view') {
-                    resBox.classList.remove('hidden');
-                    
-                    const isOptedOut = await checkOptOut(emailInput);
+            // Public Submission
+            addSafeListener('form-submit-case', 'submit', async (e) => {
+                e.preventDefault();
+                if (!auth.currentUser) await initAuth();
+                const email = document.getElementById('case-email').value.trim().toLowerCase();
+                showLoading(true);
+                try {
+                    const isOptedOut = await checkOptOut(email);
                     if (isOptedOut) {
-                        resBox.innerHTML = `<div class="bg-orange-50 border border-orange-200 p-4 rounded-md"><p class="text-orange-800 flex items-center gap-2 font-semibold"><i data-lucide="user-x" class="w-5 h-5"></i> Privacy Opt-Out Active</p><p class="text-sm text-gray-600 mt-1">This email address has previously opted out of data collection. No personal data or case records are stored in PeakCRM for <strong>${emailInput}</strong>.</p></div>`;
-                        lucide.createIcons();
+                        showLoading(false);
+                        showToast('This email has been opted out of data collection.', 'error');
                         return;
                     }
 
-                    if (userCases.length === 0) {
-                        resBox.innerHTML = `<p class="text-gray-600">No data found associated with <strong>${emailInput}</strong>.</p>`;
-                    } else {
-                        let html = `<h4 class="font-bold mb-4 text-peak-primary">Data Profile for ${emailInput}</h4>
-                                    <p class="text-sm text-gray-600 mb-4">Found ${userCases.length} case record(s).</p>
-                                    <div class="space-y-3">`;
-                        userCases.forEach(c => {
-                            const d = c.data();
-                            html += `
-                                <div class="bg-white p-3 border rounded shadow-sm">
-                                    <div class="flex justify-between"><span class="font-bold text-sm">${d.displayId}</span> <span class="text-xs bg-gray-100 px-2 rounded">${d.status}</span></div>
-                                    <p class="text-xs text-gray-500 mt-1">Name: ${d.name} | Phone: ${d.phone || 'N/A'}</p>
-                                    <p class="text-xs text-gray-500">Address: ${d.address || 'N/A'}</p>
-                                    <p class="text-xs text-gray-700 mt-2 truncate">${d.description}</p>
-                                </div>`;
-                        });
-                        html += `</div>`;
-                        resBox.innerHTML = html;
-                    }
-                } 
-                else if (action === 'delete') {
-                    if (userCases.length === 0) {
-                        showToast('No data found to delete.', 'info');
-                    } else {
-                        confirmAction('Delete Personal Data', `Are you sure you want to permanently delete all ${userCases.length} records associated with ${emailInput}? This cannot be undone.`, 'Delete All Data', async () => {
-                            showLoading(true);
-                            for (let c of userCases) {
-                                await deleteDoc(doc(db, ...publicBase, 'cases', c.id));
-                            }
-                            await logAudit('CCPA Deletion', `Deleted ${userCases.length} records for ${emailInput}`);
-                            showLoading(false);
-                            document.getElementById('ccpa-email').value = '';
-                            resBox.classList.add('hidden');
-                            showToast('All personal data successfully deleted.', 'success');
-                        });
-                    }
-                }
-                else if (action === 'optout') {
-                    confirmAction('Opt-Out of Data Collection', `By opting out, you block ${emailInput} from submitting future cases. We will also delete existing data. Proceed?`, 'Opt-Out & Delete Data', async () => {
-                        showLoading(true);
-                        for (let c of userCases) {
-                            await deleteDoc(doc(db, ...publicBase, 'cases', c.id));
-                        }
-                        const optOutsRef = collection(db, ...publicBase, 'optouts');
-                        await addDoc(optOutsRef, { email: emailInput, timestamp: serverTimestamp() });
-                        
-                        await logAudit('CCPA Opt-Out', `Opted out and deleted records for ${emailInput}`);
-                        showLoading(false);
-                        document.getElementById('ccpa-email').value = '';
-                        resBox.classList.add('hidden');
-                        showToast('You have been opted out and your data removed.', 'success');
-                    });
-                }
-            } catch (error) {
-                console.error(error);
-                showToast('System error processing CCPA request.', 'error');
-            } finally {
-                showLoading(false);
-            }
-        };
+                    const year = new Date().getFullYear();
+                    const randomId = Math.floor(100000 + Math.random() * 900000);
+                    const displayId = `PK-${year}-${randomId}`;
 
-        // --- STAFF FEATURES ---
+                    const caseData = {
+                        displayId,
+                        name: document.getElementById('case-name').value.trim(),
+                        email,
+                        phone: document.getElementById('case-phone').value.trim(),
+                        address: document.getElementById('case-address').value.trim(),
+                        type: document.getElementById('case-type').value,
+                        description: document.getElementById('case-desc').value.trim(),
+                        status: 'Received',
+                        department: 'Unassigned',
+                        createdAt: serverTimestamp()
+                    };
+
+                    await addDoc(collection(db, ...publicBase, 'cases'), caseData);
+                    await autoAddContact(caseData.name, email, caseData.phone);
+                    
+                    showLoading(false);
+                    document.getElementById('form-submit-case').reset();
+                    openSuccessModal(displayId);
+                } catch (error) {
+                    showLoading(false);
+                    showToast('Error submitting case.', 'error');
+                }
+            });
+
+            // Public Tracking
+            addSafeListener('form-track-case', 'submit', async (e) => {
+                e.preventDefault();
+                if (!auth.currentUser) await initAuth();
+                const caseId = document.getElementById('track-id').value.trim().toUpperCase();
+                const email = document.getElementById('track-email').value.trim().toLowerCase();
+                const resBox = document.getElementById('track-result');
+                showLoading(true);
+                try {
+                    const casesRef = collection(db, ...publicBase, 'cases');
+                    const snap = await getDocs(casesRef);
+                    const found = snap.docs.find(d => d.data().displayId === caseId && d.data().email === email);
+
+                    resBox.classList.remove('hidden');
+                    if (found) {
+                        const data = found.data();
+                        const dateStr = data.createdAt ? data.createdAt.toDate().toLocaleDateString() : 'Unknown';
+                        const lastUpdatedStr = data.lastUpdatedAt ? data.lastUpdatedAt.toDate().toLocaleString() : dateStr;
+                        
+                        let statusColor = 'text-blue-600 bg-blue-50 border-blue-200';
+                        if (data.status === 'Resolved' || data.status === 'Closed') statusColor = 'text-green-600 bg-green-50 border-green-200';
+                        if (data.status === 'In Progress') statusColor = 'text-orange-600 bg-orange-50 border-orange-200';
+                        
+                        resBox.innerHTML = `
+                            <div class="flex justify-between items-start mb-4 border-b pb-4">
+                                <div><h4 class="font-bold text-xl text-gray-800">${data.displayId}</h4><p class="text-sm text-gray-500">Submitted on ${dateStr}</p></div>
+                                <span class="px-3 py-1 border rounded-full font-bold ${statusColor} text-sm">${data.status}</span>
+                            </div>
+                            <div class="space-y-3">
+                                <p class="text-sm"><span class="font-semibold text-gray-700">Resident Name:</span> ${data.name}</p>
+                                <p class="text-sm"><span class="font-semibold text-gray-700">Issue Category:</span> ${data.type}</p>
+                                <p class="text-sm"><span class="font-semibold text-gray-700">Assigned Department:</span> ${data.department}</p>
+                                ${data.address ? `<p class="text-sm"><span class="font-semibold text-gray-700">Location:</span> ${data.address}</p>` : ''}
+                                <div class="mt-4 bg-white p-4 rounded border text-sm text-gray-700"><span class="font-semibold block mb-1">Case Description:</span>${data.description}</div>
+                                <div class="mt-4 pt-4 border-t text-xs text-gray-500 flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> Last updated: ${lastUpdatedStr}</div>
+                            </div>
+                        `;
+                        lucide.createIcons();
+                    } else {
+                        resBox.innerHTML = `<p class="text-red-600 font-semibold"><i data-lucide="alert-circle" class="w-4 h-4 inline mr-1"></i> No case found.</p>`;
+                        lucide.createIcons();
+                    }
+                } catch (error) {
+                    showToast('Error retrieving status.', 'error');
+                } finally {
+                    showLoading(false);
+                }
+            });
+
+            // Staff - Search Contacts
+            addSafeListener('contacts-search', 'keyup', renderContacts);
+
+            // Staff - Add Contact Form
+            addSafeListener('new-contact-form', 'submit', async (e) => {
+                e.preventDefault();
+                const name = document.getElementById('contact-name').value.trim();
+                const email = document.getElementById('contact-email').value.trim().toLowerCase();
+                const phone = document.getElementById('contact-phone').value.trim();
+                
+                showLoading(true);
+                try {
+                    const isOptedOut = await checkOptOut(email);
+                    if (isOptedOut) {
+                        showLoading(false);
+                        showToast('Email opted out of collection. Cannot add.', 'error');
+                        return;
+                    }
+                    await addDoc(collection(db, ...publicBase, 'contacts'), { name, email, phone, createdAt: serverTimestamp() });
+                    document.getElementById('new-contact-form').reset();
+                    showToast('Contact saved successfully', 'success');
+                } catch (err) {
+                    showToast('Failed to save contact', 'error');
+                } finally {
+                    showLoading(false);
+                }
+            });
+
+            // Staff Dashboard Filters
+            addSafeListener('dash-search', 'keyup', renderDashboard);
+            addSafeListener('dash-status', 'change', renderDashboard);
+            addSafeListener('dash-dept', 'change', renderDashboard);
+
+            // Staff Case Actions
+            addSafeListener('btn-save-case', 'click', async () => {
+                if (!currentViewingCaseId || !isStaffUser) return;
+                try {
+                    await verifyBadgeAction('Update Case Status/Department');
+                    const newStatus = document.getElementById('manage-status').value;
+                    const newDept = document.getElementById('manage-dept').value;
+                    showLoading(true);
+                    await updateDoc(doc(db, ...publicBase, 'cases', currentViewingCaseId), { status: newStatus, department: newDept, lastUpdatedAt: serverTimestamp() });
+                    await logAudit('Case Updated', `Staff updated case ${currentViewingCaseId} (Status: ${newStatus}, Dept: ${newDept})`);
+                    document.getElementById('detail-status-badge').innerText = newStatus;
+                    document.getElementById('detail-dept-display').innerText = newDept;
+                    showToast('Case updated', 'success');
+                } catch (error) {
+                    if (error !== 'Cancelled by user') showToast('Error updating', 'error');
+                } finally { showLoading(false); }
+            });
+
+            addSafeListener('btn-add-note', 'click', async (e) => {
+                const textInput = document.getElementById('new-note');
+                const text = textInput.value.trim();
+                if (!text || !currentViewingCaseId || !isStaffUser) return;
+                
+                const btn = e.currentTarget;
+                try {
+                    await verifyBadgeAction('Add Internal Note');
+                    btn.disabled = true; btn.innerText = 'Saving...';
+                    await addDoc(collection(db, ...publicBase, 'notes'), { caseId: currentViewingCaseId, text: text, author: currentUser.email, timestamp: serverTimestamp() });
+                    await logAudit('Note Added', `Staff added note to case ${currentViewingCaseId}`);
+                    textInput.value = '';
+                    await loadInternalNotes(currentViewingCaseId);
+                } catch (e) {
+                    if (e !== 'Cancelled by user') showToast('Failed to add note', 'error');
+                } finally {
+                    btn.disabled = false; btn.innerText = 'Add Note';
+                }
+            });
+
+            // Staff - Create Case For Resident
+            addSafeListener('form-staff-submit-case', 'submit', async (e) => {
+                e.preventDefault();
+                try {
+                    await verifyBadgeAction('Create Case for Resident');
+                    showLoading(true);
+                    const email = document.getElementById('staff-case-email').value.trim().toLowerCase();
+                    const isOptedOut = await checkOptOut(email);
+                    if (isOptedOut) {
+                        showLoading(false);
+                        showToast('Resident has opted out. Cannot create case.', 'error');
+                        return;
+                    }
+
+                    const year = new Date().getFullYear();
+                    const randomId = Math.floor(100000 + Math.random() * 900000);
+                    const displayId = `PK-${year}-${randomId}`;
+
+                    const caseData = {
+                        displayId,
+                        name: document.getElementById('staff-case-name').value.trim(),
+                        email: email,
+                        phone: document.getElementById('staff-case-phone').value.trim(),
+                        address: document.getElementById('staff-case-address').value.trim(),
+                        type: document.getElementById('staff-case-type').value,
+                        department: document.getElementById('staff-case-dept').value || 'Unassigned',
+                        description: document.getElementById('staff-case-desc').value.trim(),
+                        status: 'Received',
+                        createdAt: serverTimestamp(),
+                        createdBy: currentUser.email
+                    };
+
+                    await addDoc(collection(db, ...publicBase, 'cases'), caseData);
+                    await autoAddContact(caseData.name, email, caseData.phone);
+                    await logAudit('Case Created', `Staff created case ${displayId}`);
+                    
+                    showLoading(false);
+                    document.getElementById('form-staff-submit-case').reset();
+                    showToast(`Case ${displayId} created successfully.`, 'success');
+                    navigateTo('staff-dashboard');
+                } catch (error) {
+                    showLoading(false);
+                    if (error !== 'Cancelled by user') showToast('Error creating case.', 'error');
+                }
+            });
+
+            // Admin Actions
+            addSafeListener('btn-export-csv', 'click', async () => {
+                if (allCases.length === 0) { showToast('No cases to export', 'info'); return; }
+                try {
+                    await verifyBadgeAction('Export Full Database to CSV');
+                    const headers = ['Case ID', 'Date', 'Name', 'Email', 'Phone', 'Type', 'Department', 'Status'];
+                    const rows = allCases.map(c => [
+                        c.displayId, c.createdAt ? c.createdAt.toDate().toISOString() : '', `"${c.name}"`,
+                        c.email, c.phone || '', c.type, c.department, c.status
+                    ]);
+                    const csvContent = "data:text/csv;charset=utf-8," + headers.join(',') + "\n" + rows.map(e => e.join(",")).join("\n");
+                    const encodedUri = encodeURI(csvContent);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", encodedUri);
+                    link.setAttribute("download", `peakcrm_cases_export_${new Date().toISOString().split('T')[0]}.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    logAudit('Data Export', 'Admin exported cases to CSV');
+                } catch (e) { }
+            });
+
+            addSafeListener('btn-view-logs', 'click', async () => {
+                try {
+                    await verifyBadgeAction('View System Audit Logs');
+                    document.getElementById('admin-logs-placeholder').classList.add('hidden');
+                    const container = document.getElementById('admin-logs-container');
+                    container.classList.remove('hidden');
+                    container.innerHTML = '<p class="text-gray-400">Loading logs...</p>';
+                    
+                    const logsRef = collection(db, ...publicBase, 'auditLogs');
+                    const snap = await getDocs(logsRef);
+                    const logs = snap.docs.map(d => d.data()).sort((a,b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
+                    
+                    if (logs.length === 0) container.innerHTML = '<p class="text-gray-400">No system logs found.</p>';
+                    else container.innerHTML = logs.map(l => `<div><span class="text-gray-500">[${l.timestamp ? l.timestamp.toDate().toLocaleString() : ''}]</span> <strong class="text-white">${l.action}</strong>: ${l.details} <em class="text-gray-400">(${l.user})</em></div>`).join('');
+                } catch (e) { 
+                    if (e !== 'Cancelled by user') document.getElementById('admin-logs-container').innerHTML = '<p class="text-red-400">Failed to load logs.</p>';
+                }
+            });
+
+        });
+
+        // --- RENDER HELPERS ---
         const renderDashboard = () => {
             if (!isStaffUser) return;
             const tbody = document.getElementById('dash-table-body');
@@ -1334,17 +1343,13 @@
             const filterDept = document.getElementById('dash-dept').value;
 
             tbody.innerHTML = '';
-            
             const filtered = allCases.filter(c => {
                 const searchStr = search.toLowerCase();
                 const dId = (c.displayId || '').toLowerCase();
                 const dName = (c.name || '').toLowerCase();
                 const dEmail = (c.email || '').toLowerCase();
 
-                const matchSearch = dId.includes(searchStr) || 
-                                    dName.includes(searchStr) || 
-                                    dEmail.includes(searchStr);
-                
+                const matchSearch = dId.includes(searchStr) || dName.includes(searchStr) || dEmail.includes(searchStr);
                 const matchStatus = filterStatus ? c.status === filterStatus : true;
                 const matchDept = filterDept ? c.department === filterDept : true;
                 return matchSearch && matchStatus && matchDept;
@@ -1366,20 +1371,10 @@
                     tr.innerHTML = `
                         <td class="p-4 font-mono font-semibold text-peak-primary">${c.displayId}</td>
                         <td class="p-4">${dateStr}</td>
-                        <td class="p-4">
-                            <div class="font-semibold">${c.name}</div>
-                            <div class="text-xs text-gray-500">${c.email}</div>
-                        </td>
-                        <td class="p-4">
-                            <div class="font-semibold">${c.type}</div>
-                            <div class="text-xs text-gray-500">${c.department}</div>
-                        </td>
-                        <td class="p-4">
-                            <span class="px-2 py-1 rounded text-xs font-bold ${statusClass}">${c.status}</span>
-                        </td>
-                        <td class="p-4 text-center">
-                            <button onclick="openStaffCase('${c.id}')" class="text-peak-primary hover:text-peak-accent font-semibold text-sm">View <i data-lucide="arrow-right" class="w-4 h-4 inline align-middle"></i></button>
-                        </td>
+                        <td class="p-4"><div class="font-semibold">${c.name}</div><div class="text-xs text-gray-500">${c.email}</div></td>
+                        <td class="p-4"><div class="font-semibold">${c.type}</div><div class="text-xs text-gray-500">${c.department}</div></td>
+                        <td class="p-4"><span class="px-2 py-1 rounded text-xs font-bold ${statusClass}">${c.status}</span></td>
+                        <td class="p-4 text-center"><button onclick="openStaffCase('${c.id}')" class="text-peak-primary hover:text-peak-accent font-semibold text-sm">View <i data-lucide="arrow-right" class="w-4 h-4 inline align-middle"></i></button></td>
                     `;
                     tbody.appendChild(tr);
                 });
@@ -1387,302 +1382,12 @@
             }
         };
 
-        addSafeListener('dash-search', 'keyup', renderDashboard);
-        addSafeListener('dash-status', 'change', renderDashboard);
-        addSafeListener('dash-dept', 'change', renderDashboard);
-
-        window.openStaffCase = async (docId) => {
-            const caseData = allCases.find(c => c.id === docId);
-            if (!caseData) return;
-
-            try {
-                await verifyBadgeAction('Access Classified Case Details');
-            } catch (e) { return; }
-
-            currentViewingCaseId = docId;
-
-            document.getElementById('detail-id').innerText = caseData.displayId;
-            document.getElementById('detail-date').innerText = caseData.createdAt ? `Submitted: ${caseData.createdAt.toDate().toLocaleString()}` : 'Unknown Date';
-            document.getElementById('detail-status-badge').innerText = caseData.status;
-            
-            document.getElementById('detail-name').innerText = caseData.name;
-            document.getElementById('detail-email').innerText = caseData.email;
-            document.getElementById('detail-phone').innerText = caseData.phone || 'No phone provided';
-            document.getElementById('detail-address').innerText = caseData.address || 'No location provided';
-            
-            document.getElementById('detail-type').innerText = caseData.type;
-            document.getElementById('detail-dept-display').innerText = caseData.department;
-            document.getElementById('detail-desc').innerText = caseData.description;
-
-            const fileContainer = document.getElementById('detail-file-container');
-            if (caseData.fileUrl) {
-                fileContainer.innerHTML = `<a href="${caseData.fileUrl}" target="_blank" class="text-sm text-blue-600 hover:underline flex items-center gap-1"><i data-lucide="external-link" class="w-4 h-4"></i> View Attachment</a>`;
-            } else {
-                fileContainer.innerHTML = '<span class="text-sm text-gray-400">No attachments</span>';
-            }
-
-            document.getElementById('manage-status').value = caseData.status;
-            document.getElementById('manage-dept').value = caseData.department;
-
-            loadInternalNotes(docId);
-            navigateTo('staff-case');
-        };
-
-        window.saveCaseUpdates = async () => {
-            if (!currentViewingCaseId || !isStaffUser) return;
-            const newStatus = document.getElementById('manage-status').value;
-            const newDept = document.getElementById('manage-dept').value;
-
-            try {
-                await verifyBadgeAction('Modify Case Classification / Status');
-            } catch (e) { return; }
-
-            showLoading(true);
-            try {
-                const caseRef = doc(db, ...publicBase, 'cases', currentViewingCaseId);
-                await updateDoc(caseRef, {
-                    status: newStatus,
-                    department: newDept,
-                    lastUpdatedAt: serverTimestamp()
-                });
-                
-                await logAudit('Case Updated', `Staff updated case ${currentViewingCaseId} (Status: ${newStatus}, Dept: ${newDept})`);
-                
-                document.getElementById('detail-status-badge').innerText = newStatus;
-                document.getElementById('detail-dept-display').innerText = newDept;
-                showToast('Case updated successfully', 'success');
-            } catch (error) {
-                console.error(error);
-                showToast('Error updating case', 'error');
-            } finally {
-                showLoading(false);
-            }
-        };
-
-        const loadInternalNotes = async (caseId) => {
-            const notesContainer = document.getElementById('notes-container');
-            notesContainer.innerHTML = '<div class="text-sm text-gray-500 italic">Loading notes...</div>';
-            
-            try {
-                const notesRef = collection(db, ...publicBase, 'notes');
-                const snap = await getDocs(notesRef);
-                const caseNotes = snap.docs
-                    .map(d => ({id: d.id, ...d.data()}))
-                    .filter(n => n.caseId === caseId)
-                    .sort((a,b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
-
-                if (caseNotes.length === 0) {
-                    notesContainer.innerHTML = '<div class="text-xs text-gray-400 italic">No internal notes yet.</div>';
-                } else {
-                    notesContainer.innerHTML = '';
-                    caseNotes.forEach(n => {
-                        const dStr = n.timestamp ? n.timestamp.toDate().toLocaleString() : '';
-                        notesContainer.innerHTML += `
-                            <div class="bg-gray-50 p-3 rounded text-sm border">
-                                <div class="flex justify-between text-xs text-gray-500 mb-1">
-                                    <span class="font-bold">${n.author}</span>
-                                    <span>${dStr}</span>
-                                </div>
-                                <div class="text-gray-800">${n.text}</div>
-                            </div>
-                        `;
-                    });
-                }
-            } catch (e) {
-                console.error(e);
-                notesContainer.innerHTML = '<div class="text-xs text-red-500">Failed to load notes.</div>';
-            }
-        };
-
-        window.addNote = async () => {
-            const textInput = document.getElementById('new-note');
-            const text = textInput.value.trim();
-            if (!text || !currentViewingCaseId || !isStaffUser) return;
-
-            const btn = event.currentTarget;
-            btn.disabled = true;
-            btn.innerText = 'Saving...';
-
-            try {
-                const notesRef = collection(db, ...publicBase, 'notes');
-                await addDoc(notesRef, {
-                    caseId: currentViewingCaseId,
-                    text: text,
-                    author: currentUser.email,
-                    timestamp: serverTimestamp()
-                });
-                await logAudit('Note Added', `Staff added internal note to case ${currentViewingCaseId}`);
-                textInput.value = '';
-                await loadInternalNotes(currentViewingCaseId);
-            } catch (e) {
-                showToast('Failed to add note', 'error');
-            } finally {
-                btn.disabled = false;
-                btn.innerText = 'Add Note';
-            }
-        };
-
-        // --- ADMIN FEATURES ---
-        const loadOptOutsAdmin = async () => {
-            if (!isSuperAdmin) return;
-            const tbody = document.getElementById('admin-optout-table');
-            tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-500">Loading data...</td></tr>';
-            
-            try {
-                const optOutsRef = collection(db, ...publicBase, 'optouts');
-                const snap = await getDocs(optOutsRef);
-                allOptOuts = snap.docs.map(d => ({id: d.id, ...d.data()}));
-                
-                if (allOptOuts.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="3" class="p-8 text-center text-gray-500">No emails currently opted out.</td></tr>';
-                } else {
-                    tbody.innerHTML = '';
-                    allOptOuts.forEach(o => {
-                        const dStr = o.timestamp ? o.timestamp.toDate().toLocaleDateString() : 'Unknown';
-                        tbody.innerHTML += `
-                            <tr class="hover:bg-gray-50">
-                                <td class="p-3 font-semibold">${o.email}</td>
-                                <td class="p-3 text-gray-500">${dStr}</td>
-                                <td class="p-3 text-right">
-                                    <button onclick="removeOptOut('${o.id}', '${o.email}')" class="text-red-600 hover:text-red-800 font-semibold text-sm bg-red-50 px-3 py-1 rounded">Remove Block</button>
-                                </td>
-                            </tr>
-                        `;
-                    });
-                }
-            } catch (e) {
-                console.error(e);
-                tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-red-500">Error loading opt-out data.</td></tr>';
-            }
-        };
-
-        window.removeOptOut = (docId, email) => {
-            confirmAction('Remove Opt-Out Block', `Allow ${email} to submit cases to PeakCRM again?`, 'Remove Block', async () => {
-                try {
-                    await verifyBadgeAction('Admin Override: Remove Privacy Block');
-                } catch(e) { return; }
-
-                showLoading(true);
-                try {
-                    await deleteDoc(doc(db, ...publicBase, 'optouts', docId));
-                    await logAudit('Opt-Out Removed', `Admin removed block for ${email}`);
-                    showToast(`Block removed for ${email}`, 'success');
-                    loadOptOutsAdmin();
-                } catch (error) {
-                    console.error(error);
-                    showToast('Error removing opt-out', 'error');
-                } finally {
-                    showLoading(false);
-                }
-            });
-        };
-
-        window.unlockAuditLogs = async () => {
-            try {
-                await verifyBadgeAction('Access System Audit Logs');
-                document.getElementById('admin-logs-lock').classList.add('hidden');
-                document.getElementById('admin-logs-container').classList.remove('hidden');
-                await loadAuditLogs();
-            } catch (e) { }
-        };
-
-        const loadAuditLogs = async () => {
-            const container = document.getElementById('admin-logs-container');
-            container.innerHTML = '<p class="text-gray-400">Loading logs...</p>';
-            try {
-                const logsRef = collection(db, ...publicBase, 'auditLogs');
-                const snap = await getDocs(logsRef);
-                const logs = snap.docs.map(d => d.data()).sort((a,b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
-                
-                if (logs.length === 0) {
-                    container.innerHTML = '<p class="text-gray-400">No system logs found.</p>';
-                } else {
-                    container.innerHTML = logs.map(l => {
-                        const t = l.timestamp ? l.timestamp.toDate().toLocaleString() : '';
-                        return `<div><span class="text-gray-500">[${t}]</span> <strong class="text-white">${l.action}</strong>: ${l.details} <em class="text-gray-400">(${l.user})</em></div>`;
-                    }).join('');
-                }
-            } catch (e) {
-                container.innerHTML = '<p class="text-red-400">Failed to load logs.</p>';
-            }
-        };
-
-        window.exportCasesCSV = async () => {
-            if (allCases.length === 0) {
-                showToast('No cases to export', 'info');
-                return;
-            }
-            
-            try {
-                await verifyBadgeAction('Bulk Data Export to CSV');
-            } catch (e) { return; }
-
-            const headers = ['Case ID', 'Date', 'Name', 'Email', 'Phone', 'Type', 'Department', 'Status'];
-            const rows = allCases.map(c => [
-                c.displayId,
-                c.createdAt ? c.createdAt.toDate().toISOString() : '',
-                `"${c.name}"`,
-                c.email,
-                c.phone || '',
-                c.type,
-                c.department,
-                c.status
-            ]);
-            
-            const csvContent = "data:text/csv;charset=utf-8," 
-                + headers.join(',') + "\n" 
-                + rows.map(e => e.join(",")).join("\n");
-                
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement("a");
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", `peakcrm_cases_export_${new Date().toISOString().split('T')[0]}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            logAudit('Data Export', 'Admin exported cases to CSV');
-        };
-
-        // Staff - Contacts Management
-        addSafeListener('new-contact-form', 'submit', async (e) => {
-            e.preventDefault();
-            const name = document.getElementById('contact-name').value.trim();
-            const email = document.getElementById('contact-email').value.trim().toLowerCase();
-            const phone = document.getElementById('contact-phone').value.trim();
-            
-            showLoading(true);
-            try {
-                const isOptedOut = await checkOptOut(email);
-                if (isOptedOut) {
-                    showLoading(false);
-                    showToast('This email has opted out of data collection. Cannot add as contact.', 'error');
-                    return;
-                }
-
-                const contactsRef = collection(db, ...publicBase, 'contacts');
-                await addDoc(contactsRef, { name, email, phone, createdAt: serverTimestamp() });
-                document.getElementById('new-contact-form').reset();
-                showToast('Contact saved successfully', 'success');
-            } catch (err) {
-                showToast('Failed to save contact', 'error');
-            } finally {
-                showLoading(false);
-            }
-        });
-
-        addSafeListener('contacts-search', 'keyup', () => renderContacts());
-
         const renderContacts = () => {
             const tbody = document.getElementById('contacts-table-body');
             const search = document.getElementById('contacts-search').value.toLowerCase();
             tbody.innerHTML = '';
             
-            const filtered = allContacts.filter(c => {
-                const dName = (c.name || '').toLowerCase();
-                const dEmail = (c.email || '').toLowerCase();
-                return dName.includes(search) || dEmail.includes(search);
-            });
-
+            const filtered = allContacts.filter(c => (c.name || '').toLowerCase().includes(search) || (c.email || '').toLowerCase().includes(search));
             if (filtered.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-gray-500">No contacts found.</td></tr>';
                 return;
@@ -1703,6 +1408,69 @@
             lucide.createIcons();
         };
 
+        const loadInternalNotes = async (caseId) => {
+            const notesContainer = document.getElementById('notes-container');
+            notesContainer.innerHTML = '<div class="text-sm text-gray-500 italic">Loading notes...</div>';
+            try {
+                const notesRef = collection(db, ...publicBase, 'notes');
+                const snap = await getDocs(notesRef);
+                const caseNotes = snap.docs.map(d => ({id: d.id, ...d.data()})).filter(n => n.caseId === caseId).sort((a,b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
+
+                if (caseNotes.length === 0) notesContainer.innerHTML = '<div class="text-xs text-gray-400 italic">No internal notes yet.</div>';
+                else {
+                    notesContainer.innerHTML = '';
+                    caseNotes.forEach(n => {
+                        notesContainer.innerHTML += `<div class="bg-gray-50 p-3 rounded text-sm border"><div class="flex justify-between text-xs text-gray-500 mb-1"><span class="font-bold">${n.author}</span><span>${n.timestamp ? n.timestamp.toDate().toLocaleString() : ''}</span></div><div class="text-gray-800">${n.text}</div></div>`;
+                    });
+                }
+            } catch (e) { notesContainer.innerHTML = '<div class="text-xs text-red-500">Failed to load notes.</div>'; }
+        };
+
+        const loadOptOutsAdmin = async () => {
+            if (!isSuperAdmin) return;
+            const tbody = document.getElementById('admin-optout-table');
+            tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-gray-500">Loading data...</td></tr>';
+            try {
+                const optOutsRef = collection(db, ...publicBase, 'optouts');
+                const snap = await getDocs(optOutsRef);
+                allOptOuts = snap.docs.map(d => ({id: d.id, ...d.data()}));
+                
+                if (allOptOuts.length === 0) tbody.innerHTML = '<tr><td colspan="3" class="p-8 text-center text-gray-500">No emails currently opted out.</td></tr>';
+                else {
+                    tbody.innerHTML = '';
+                    allOptOuts.forEach(o => {
+                        tbody.innerHTML += `<tr class="hover:bg-gray-50"><td class="p-3 font-semibold">${o.email}</td><td class="p-3 text-gray-500">${o.timestamp ? o.timestamp.toDate().toLocaleDateString() : 'Unknown'}</td><td class="p-3 text-right"><button onclick="removeOptOut('${o.id}', '${o.email}')" class="text-red-600 hover:text-red-800 font-semibold text-sm bg-red-50 px-3 py-1 rounded">Remove Block</button></td></tr>`;
+                    });
+                }
+            } catch (e) { tbody.innerHTML = '<tr><td colspan="3" class="p-4 text-center text-red-500">Error loading opt-out data.</td></tr>'; }
+        };
+
+        // --- INLINE WINDOW ATTACHMENTS ---
+        window.openStaffCase = async (docId) => {
+            try {
+                await verifyBadgeAction('Access Specific Case Details');
+                const caseData = allCases.find(c => c.id === docId);
+                if (!caseData) return;
+                currentViewingCaseId = docId;
+
+                document.getElementById('detail-id').innerText = caseData.displayId;
+                document.getElementById('detail-date').innerText = caseData.createdAt ? `Submitted: ${caseData.createdAt.toDate().toLocaleString()}` : 'Unknown Date';
+                document.getElementById('detail-status-badge').innerText = caseData.status;
+                document.getElementById('detail-name').innerText = caseData.name;
+                document.getElementById('detail-email').innerText = caseData.email;
+                document.getElementById('detail-phone').innerText = caseData.phone || 'No phone provided';
+                document.getElementById('detail-address').innerText = caseData.address || 'No location provided';
+                document.getElementById('detail-type').innerText = caseData.type;
+                document.getElementById('detail-dept-display').innerText = caseData.department;
+                document.getElementById('detail-desc').innerText = caseData.description;
+                document.getElementById('manage-status').value = caseData.status;
+                document.getElementById('manage-dept').value = caseData.department;
+
+                loadInternalNotes(docId);
+                navigateTo('staff-case');
+            } catch (e) { }
+        };
+
         window.viewContactCases = (email) => {
             document.getElementById('dash-search').value = email;
             navigateTo('staff-dashboard');
@@ -1715,59 +1483,74 @@
             navigateTo('staff-new-case');
         };
 
-        // Staff - Create Case
-        addSafeListener('form-staff-submit-case', 'submit', async (e) => {
-            e.preventDefault();
+        window.removeOptOut = (docId, email) => {
+            confirmAction('Remove Opt-Out Block', `Allow ${email} to submit cases to PeakCRM again?`, 'Remove Block', async () => {
+                try {
+                    await verifyBadgeAction('Override Global Opt-Out Block');
+                    showLoading(true);
+                    await deleteDoc(doc(db, ...publicBase, 'optouts', docId));
+                    await logAudit('Opt-Out Removed', `Admin removed block for ${email}`);
+                    showToast(`Block removed for ${email}`, 'success');
+                    loadOptOutsAdmin();
+                } catch (error) {
+                    if (error !== 'Cancelled by user') showToast('Error removing opt-out', 'error');
+                } finally { showLoading(false); }
+            });
+        };
+
+        window.handleCCPA = async (action) => {
+            const emailInput = document.getElementById('ccpa-email').value.trim().toLowerCase();
+            if (!emailInput) { showToast('Enter email to proceed.', 'error'); return; }
+            if (!auth.currentUser) await initAuth();
+            const resBox = document.getElementById('ccpa-result');
             showLoading(true);
+
             try {
-                const email = document.getElementById('staff-case-email').value.trim().toLowerCase();
-                const isOptedOut = await checkOptOut(email);
-                
-                if (isOptedOut) {
-                    showLoading(false);
-                    showToast('Resident has opted out of data collection. Cannot create case.', 'error');
-                    return;
+                const casesRef = collection(db, ...publicBase, 'cases');
+                const snap = await getDocs(casesRef);
+                const userCases = snap.docs.filter(d => d.data().email === emailInput);
+
+                if (action === 'view') {
+                    resBox.classList.remove('hidden');
+                    const isOptedOut = await checkOptOut(emailInput);
+                    if (isOptedOut) {
+                        resBox.innerHTML = `<div class="bg-orange-50 border border-orange-200 p-4 rounded-md"><p class="text-orange-800 flex items-center gap-2 font-semibold"><i data-lucide="user-x" class="w-5 h-5"></i> Privacy Opt-Out Active</p><p class="text-sm text-gray-600 mt-1">This email address has previously opted out of data collection. No personal data or case records are stored in PeakCRM for <strong>${emailInput}</strong>.</p></div>`;
+                        lucide.createIcons(); return;
+                    }
+                    if (userCases.length === 0) resBox.innerHTML = `<p class="text-gray-600">No data found associated with <strong>${emailInput}</strong>.</p>`;
+                    else {
+                        let html = `<h4 class="font-bold mb-4 text-peak-primary">Data Profile for ${emailInput}</h4><p class="text-sm text-gray-600 mb-4">Found ${userCases.length} case record(s).</p><div class="space-y-3">`;
+                        userCases.forEach(c => {
+                            const d = c.data();
+                            html += `<div class="bg-white p-3 border rounded shadow-sm"><div class="flex justify-between"><span class="font-bold text-sm">${d.displayId}</span> <span class="text-xs bg-gray-100 px-2 rounded">${d.status}</span></div><p class="text-xs text-gray-500 mt-1">Name: ${d.name} | Phone: ${d.phone || 'N/A'}</p><p class="text-xs text-gray-500">Address: ${d.address || 'N/A'}</p><p class="text-xs text-gray-700 mt-2 truncate">${d.description}</p></div>`;
+                        });
+                        resBox.innerHTML = html + `</div>`;
+                    }
+                } 
+                else if (action === 'delete') {
+                    if (userCases.length === 0) showToast('No data found to delete.', 'info');
+                    else {
+                        confirmAction('Delete Personal Data', `Permanently delete all ${userCases.length} records associated with ${emailInput}? This cannot be undone.`, 'Delete All Data', async () => {
+                            showLoading(true);
+                            for (let c of userCases) await deleteDoc(doc(db, ...publicBase, 'cases', c.id));
+                            await logAudit('CCPA Deletion', `Deleted ${userCases.length} records for ${emailInput}`);
+                            document.getElementById('ccpa-email').value = ''; resBox.classList.add('hidden');
+                            showLoading(false); showToast('All personal data successfully deleted.', 'success');
+                        });
+                    }
                 }
-
-                const year = new Date().getFullYear();
-                const randomId = Math.floor(100000 + Math.random() * 900000);
-                const displayId = `PK-${year}-${randomId}`;
-
-                const caseData = {
-                    displayId,
-                    name: document.getElementById('staff-case-name').value.trim(),
-                    email: email,
-                    phone: document.getElementById('staff-case-phone').value.trim(),
-                    address: document.getElementById('staff-case-address').value.trim(),
-                    type: document.getElementById('staff-case-type').value,
-                    department: document.getElementById('staff-case-dept').value || 'Unassigned',
-                    description: document.getElementById('staff-case-desc').value.trim(),
-                    status: 'Received',
-                    createdAt: serverTimestamp(),
-                    createdBy: currentUser.email
-                };
-
-                await addDoc(collection(db, ...publicBase, 'cases'), caseData);
-                await autoAddContact(caseData.name, email, caseData.phone);
-                await logAudit('Case Created', `Staff created case ${displayId}`);
-                
-                showLoading(false);
-                document.getElementById('form-staff-submit-case').reset();
-                showToast(`Case ${displayId} created successfully.`, 'success');
-                navigateTo('staff-dashboard');
-            } catch (error) {
-                showLoading(false);
-                showToast('Error creating case.', 'error');
-            }
-        });
-
-        // Initialize App once DOM is loaded safely
-        window.addEventListener('DOMContentLoaded', async () => {
-            if (typeof lucide !== 'undefined') {
-                lucide.createIcons();
-            }
-            await initAuth();
-        });
+                else if (action === 'optout') {
+                    confirmAction('Opt-Out of Data Collection', `Block ${emailInput} from future cases and delete existing data?`, 'Opt-Out & Delete Data', async () => {
+                        showLoading(true);
+                        for (let c of userCases) await deleteDoc(doc(db, ...publicBase, 'cases', c.id));
+                        await addDoc(collection(db, ...publicBase, 'optouts'), { email: emailInput, timestamp: serverTimestamp() });
+                        await logAudit('CCPA Opt-Out', `Opted out and deleted records for ${emailInput}`);
+                        document.getElementById('ccpa-email').value = ''; resBox.classList.add('hidden');
+                        showLoading(false); showToast('You have been opted out and your data removed.', 'success');
+                    });
+                }
+            } catch (error) { showToast('System error processing request.', 'error'); } finally { showLoading(false); }
+        };
 
     </script>
 </body>
