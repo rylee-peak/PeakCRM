@@ -619,7 +619,7 @@
             <h3 class="text-2xl font-bold text-gray-800 mb-2" id="rfid-title">Scan Badge</h3>
             <p class="text-gray-600 mb-6 text-sm" id="rfid-msg">Please scan your RFID badge to continue.</p>
             
-            <form id="rfid-form" autocomplete="off">
+            <form id="rfid-form" autocomplete="off" onsubmit="event.preventDefault();">
                 <!-- Invisible input focused automatically to catch RFID scanner input -->
                 <input type="password" id="rfid-input" class="opacity-0 absolute -z-10" autocomplete="off">
             </form>
