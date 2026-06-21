@@ -798,8 +798,10 @@
         };
 
         window.cancelRfid = () => {
+            // FIX: Capture the reject callback before closing the modal clears it!
+            const rejectCallback = rfidReject;
             closeRfidModal();
-            if (rfidReject) rfidReject('Cancelled by user');
+            if (rejectCallback) rejectCallback('Cancelled by user');
         };
 
         const closeRfidModal = () => {
@@ -825,13 +827,16 @@
             
             if (!scannedId) return;
 
+            // FIX: Capture the resolver function BEFORE closeRfidModal nullifies it!
+            const resolveCallback = rfidResolve;
+
             if (rfidMode === 'register') {
                 closeRfidModal();
-                if (rfidResolve) rfidResolve(scannedId);
+                if (resolveCallback) resolveCallback(scannedId);
             } else if (rfidMode === 'verify') {
                 if (scannedId === userBadgeId) {
                     closeRfidModal();
-                    if (rfidResolve) rfidResolve(true);
+                    if (resolveCallback) resolveCallback(true);
                 } else {
                     const errBox = document.getElementById('rfid-error');
                     errBox.classList.remove('hidden');
